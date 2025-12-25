@@ -161,6 +161,17 @@ def do_target(page: Page, tgt: Dict[str, Any], timeout_ms: int) -> Optional[Dict
     _do_wait_stable(page, stable_ms=stable_ms, poll_ms=poll_ms, timeout_ms=timeout_ms)
     return None
 
+  if t == "wait_if_exists":
+    sel = tgt["selector"]
+    when = tgt.get("when", "hidden")  # hidden | detached
+    loc = page.locator(sel)
+    if loc.count() == 0:
+      return {"wait_if_exists": "not_present"}
+    state = "hidden" if when == "hidden" else "detached"
+    loc.first.wait_for(state=state, timeout=timeout_ms)
+    return {"wait_if_exists": f"waited_{state}"}
+
+
   if t == "wait_any":
     """
     Wait for the first condition that succeeds among a list of targets.
