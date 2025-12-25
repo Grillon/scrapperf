@@ -1,0 +1,67 @@
+{
+  "name": "mini_ui_wait_any",
+  "url": "file:///home/grillon/Documents/Exercices/Projets_outillage/scrapper/index.html",
+  "runs": 20,
+  "timeout_ms": 20000,
+  "headed": false,
+
+  "measurements": [
+    {
+      "name": "page_ready",
+      "trigger": { "type": "goto", "wait_until": "domcontentloaded" },
+      "target": {
+        "type": "wait_any",
+        "timeout_ms": 20000,
+        "slice_ms": 500,
+        "targets": [
+          { "type": "wait_hidden", "selector": "text=Chargement" },
+          { "type": "wait_visible", "selector": "text=Liste d’éléments" },
+          { "type": "wait_stable", "stable_ms": 800, "poll_ms": 100 }
+        ]
+      }
+    },
+
+    {
+      "name": "add_item_visible",
+      "trigger": { "type": "click", "selector": "button:has-text('+')" },
+      "target": {
+        "type": "wait_any",
+        "timeout_ms": 15000,
+        "slice_ms": 500,
+        "targets": [
+          { "type": "wait_visible", "selector": "li" },
+          { "type": "wait_visible", "selector": "text=Clique → popup" }
+        ]
+      }
+    },
+
+    {
+      "name": "open_popup_visible",
+      "trigger": { "type": "click", "selector": "li:first-child" },
+      "target": {
+        "type": "wait_any",
+        "timeout_ms": 15000,
+        "slice_ms": 500,
+        "targets": [
+          { "type": "wait_visible", "selector": "[role='dialog']" },
+          { "type": "wait_visible", "selector": "text=Fermer" }
+        ]
+      }
+    },
+
+    {
+      "name": "close_popup_hidden",
+      "trigger": { "type": "press", "key": "Escape" },
+      "target": {
+        "type": "wait_any",
+        "timeout_ms": 15000,
+        "slice_ms": 500,
+        "targets": [
+          { "type": "wait_hidden", "selector": "[role='dialog']" },
+          { "type": "wait_hidden", "selector": "text=Fermer" }
+        ]
+      }
+    }
+  ]
+}
+

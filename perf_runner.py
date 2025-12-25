@@ -47,6 +47,7 @@ class OneMeasurementResult:
   ok: bool
   duration_ms: float
   error: Optional[str] = None
+  details: Optional[Dict[str, Any]] = None  # e.g. wait_any winner
 
 
 @dataclass
@@ -90,7 +91,52 @@ def do_trigger(page: Page, trig: Dict[str, Any], base_url: str, timeout_ms: int)
   raise ValueError(f"Unsupported trigger type: {t}")
 
 
-def do_target(page: Page, tgt: Dict[str, Any], timeout_ms: int) -> None:
+def _do_wait_stable(page: Page, stable_ms: int, poll_ms: int, timeout_ms: int) -> None:
+  page.wait_for_function(
+    """
+    async ({stableMs, pollMs}) => {
+      let lastChange = performance.now();
+
+      function snap() {
+        const docEl = document.documentElement;
+        const nodes = document.getElementsByTagName('*').length;
+        const h = docEl.scrollHeight;
+        const w = docEl.scrollWidth;
+        const rs = document.readyState;
+        return { nodes, h, w, rs };
+      }
+
+      let prev = snap();
+
+      while (true) {
+        await new Promise(r => setTimeout(r, pollMs));
+        const cur = snap();
+        const changed =
+          cur.nodes !== prev.nodes ||
+          cur.h !== prev.h ||
+          cur.w !== prev.w ||
+          cur.rs !== prev.rs;
+
+        if (changed) {
+          lastChange = performance.now();
+          prev = cur;
+        }
+
+        if (performance.now() - lastChange >= stableMs) {
+          return true;
+        }
+      }
+    }
+    """,
+    arg={"stableMs": stable_ms, "pollMs": poll_ms},
+    timeout=timeout_ms,
+  )
+
+
+def do_target(page: Page, tgt: Dict[str, Any], timeout_ms: int) -> Optional[Dict[str, Any]]:
+  """
+  Executes the target wait. Returns optional details (used by wait_any).
+  """
   t = tgt.get("type")
 
   if t in ("wait_visible", "wait_hidden", "wait_attached", "wait_detached"):
@@ -102,58 +148,65 @@ def do_target(page: Page, tgt: Dict[str, Any], timeout_ms: int) -> None:
       "wait_detached": "detached",
     }
     _locator(page, sel).wait_for(state=state_map[t], timeout=timeout_ms)
-    return
+    return None
 
   if t == "sleep":
     ms = int(tgt.get("ms", 0))
     page.wait_for_timeout(ms)
-    return
+    return None
 
   if t == "wait_stable":
     stable_ms = int(tgt.get("stable_ms", 600))
     poll_ms = int(tgt.get("poll_ms", 100))
+    _do_wait_stable(page, stable_ms=stable_ms, poll_ms=poll_ms, timeout_ms=timeout_ms)
+    return None
 
-    # Note: arg=... pour compatibilité signature Playwright Python
-    page.wait_for_function(
-      """
-      async ({stableMs, pollMs}) => {
-        let lastChange = performance.now();
+  if t == "wait_any":
+    """
+    Wait for the first condition that succeeds among a list of targets.
 
-        function snap() {
-          const docEl = document.documentElement;
-          const nodes = document.getElementsByTagName('*').length;
-          const h = docEl.scrollHeight;
-          const w = docEl.scrollWidth;
-          const rs = document.readyState;
-          return { nodes, h, w, rs };
-        }
+    JSON:
+    {
+      "type": "wait_any",
+      "timeout_ms": 15000,          // optional override
+      "targets": [ {target1}, {target2}, ... ]
+    }
 
-        let prev = snap();
+    It will try repeatedly with short per-target time slices until total timeout.
+    """
+    targets = tgt.get("targets")
+    if not isinstance(targets, list) or not targets:
+      raise ValueError("wait_any requires a non-empty 'targets' list")
 
-        while (true) {
-          await new Promise(r => setTimeout(r, pollMs));
-          const cur = snap();
-          const changed =
-            cur.nodes !== prev.nodes ||
-            cur.h !== prev.h ||
-            cur.w !== prev.w ||
-            cur.rs !== prev.rs;
+    total_timeout_ms = int(tgt.get("timeout_ms", timeout_ms))
+    slice_ms = int(tgt.get("slice_ms", 400))  # time budget per target attempt
+    poll_gap_ms = int(tgt.get("poll_gap_ms", 50))
 
-          if (changed) {
-            lastChange = performance.now();
-            prev = cur;
+    deadline = ms_now() + total_timeout_ms
+    last_errs: List[str] = []
+
+    while ms_now() < deadline:
+      for idx, sub in enumerate(targets):
+        remaining = int(max(0, deadline - ms_now()))
+        if remaining <= 0:
+          break
+
+        per_try = min(slice_ms, remaining)
+        try:
+          # Try this sub-target with a smaller timeout
+          do_target(page, sub, timeout_ms=per_try)
+          return {
+            "wait_any_winner_index": idx,
+            "wait_any_winner": sub,
           }
+        except Exception as e:
+          last_errs.append(f"[{idx}] {type(e).__name__}: {e}")
 
-          if (performance.now() - lastChange >= stableMs) {
-            return true;
-          }
-        }
-      }
-      """,
-      arg={"stableMs": stable_ms, "pollMs": poll_ms},
-      timeout=timeout_ms,
-    )
-    return
+      page.wait_for_timeout(poll_gap_ms)
+
+    # If we reach here: none succeeded in total_timeout_ms
+    tail = last_errs[-6:]  # keep last few for debugging
+    raise TimeoutError("wait_any timed out. Recent errors: " + " | ".join(tail))
 
   raise ValueError(f"Unsupported target type: {t}")
 
@@ -173,12 +226,22 @@ def run_once(page: Page, cfg: Dict[str, Any]) -> List[OneMeasurementResult]:
     t0 = ms_now()
     try:
       do_trigger(page, trig, base_url=url, timeout_ms=timeout_ms)
-      do_target(page, tgt, timeout_ms=timeout_ms)
+      details = do_target(page, tgt, timeout_ms=timeout_ms)
       t1 = ms_now()
-      out.append(OneMeasurementResult(name=name, ok=True, duration_ms=round(t1 - t0, 2)))
+      out.append(OneMeasurementResult(
+        name=name,
+        ok=True,
+        duration_ms=round(t1 - t0, 2),
+        details=details
+      ))
     except Exception as e:
       t1 = ms_now()
-      out.append(OneMeasurementResult(name=name, ok=False, duration_ms=round(t1 - t0, 2), error=str(e)))
+      out.append(OneMeasurementResult(
+        name=name,
+        ok=False,
+        duration_ms=round(t1 - t0, 2),
+        error=str(e)
+      ))
 
   return out
 
@@ -209,7 +272,10 @@ def main() -> None:
       parts = []
       for r in results:
         if r.ok:
-          parts.append(f"{r.name}={r.duration_ms}ms")
+          extra = ""
+          if r.details and "wait_any_winner_index" in r.details:
+            extra = f" (any→{r.details['wait_any_winner_index']})"
+          parts.append(f"{r.name}={r.duration_ms}ms{extra}")
         else:
           parts.append(f"{r.name}=ERR({r.error})")
       print(f"run {i+1}/{runs} :: " + " | ".join(parts))
