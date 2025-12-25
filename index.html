@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mini UI: liste + popup + localStorage</title>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --panel: #121a2a;
+      --panel2: #0f1626;
+      --text: #e7eefc;
+      --muted: #9bb0d1;
+      --border: rgba(255,255,255,.10);
+      --shadow: 0 18px 60px rgba(0,0,0,.45);
+      --radius: 14px;
+      --btn: #1d2a44;
+      --btnHover: #243455;
+      --accent: #7aa7ff;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      background: radial-gradient(1200px 700px at 20% 0%, rgba(122,167,255,.12), transparent 55%),
+                  radial-gradient(1000px 700px at 90% 20%, rgba(122,255,201,.08), transparent 50%),
+                  var(--bg);
+      color: var(--text);
+    }
+
+    .app {
+      height: 100%;
+      display: grid;
+      grid-template-columns: 72px 1fr;
+    }
+
+    /* Left menu */
+    .sidebar {
+      background: linear-gradient(180deg, var(--panel), var(--panel2));
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px 10px;
+      gap: 12px;
+    }
+
+    .btnPlus {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--btn);
+      color: var(--text);
+      font-size: 26px;
+      line-height: 0;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 10px 25px rgba(0,0,0,.25);
+      transition: transform .08s ease, background .12s ease;
+    }
+    .btnPlus:hover { background: var(--btnHover); }
+    .btnPlus:active { transform: translateY(1px) scale(0.99); }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      padding: 0 6px;
+    }
+
+    /* Main */
+    .main {
+      padding: 22px;
+      overflow: auto;
+    }
+
+    .header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+    .title {
+      font-size: 18px;
+      margin: 0;
+      letter-spacing: .2px;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .card {
+      background: rgba(18,26,42,.75);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 14px;
+      border-top: 1px solid var(--border);
+      cursor: pointer;
+      transition: background .12s ease;
+    }
+    .row:first-child { border-top: none; }
+    .row:hover { background: rgba(255,255,255,.03); }
+
+    .name {
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .meta {
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      white-space: nowrap;
+    }
+
+    .pill {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .empty {
+      padding: 18px 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .btnSmall {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background .12s ease;
+    }
+    .btnSmall:hover { background: rgba(255,255,255,.06); }
+
+    /* Modal */
+    .backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.55);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 22px;
+    }
+    .backdrop[aria-hidden="false"] { display: flex; }
+
+    .modal {
+      width: min(720px, 96vw);
+      background: rgba(18,26,42,.92);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      transform: translateY(6px);
+      animation: pop .14s ease-out forwards;
+    }
+    @keyframes pop {
+      from { opacity: 0; transform: translateY(10px) scale(.99); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .modalHead {
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .modalTitle {
+      margin: 0;
+      font-size: 15px;
+      letter-spacing: .2px;
+    }
+    .closeBtn {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 10px;
+      cursor: pointer;
+    }
+    .closeBtn:hover { background: rgba(255,255,255,.06); }
+
+    .modalBody {
+      padding: 14px 16px 18px;
+    }
+    .modalText {
+      margin: 0;
+      color: var(--text);
+      line-height: 1.45;
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+
+    .kbd {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      border: 1px solid var(--border);
+      border-bottom-width: 2px;
+      padding: 2px 6px;
+      border-radius: 8px;
+      color: var(--muted);
+      background: rgba(255,255,255,.03);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <button class="btnPlus" id="addBtn" title="Ajouter un élément">+</button>
+      <div class="hint">Ajoute un item<br/>dans la liste</div>
+    </aside>
+
+    <main class="main">
+      <div class="header">
+        <div>
+          <h1 class="title">Liste d’éléments</h1>
+          <div class="sub">Clic sur un item → popup. Persisté via <span class="pill">localStorage</span>.</div>
+        </div>
+        <div class="actions">
+          <button class="btnSmall" id="clearBtn" title="Supprimer tous les éléments">Reset</button>
+          <div class="sub">Fermer popup: <span class="kbd">Esc</span></div>
+        </div>
+      </div>
+
+      <section class="card">
+        <ul class="list" id="list"></ul>
+        <div class="empty" id="emptyState" style="display:none;">
+          Aucun élément. Clique sur <b>+</b> à gauche pour en créer un.
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal -->
+  <div class="backdrop" id="backdrop" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal" role="document" aria-labelledby="modalTitle">
+      <div class="modalHead">
+        <h2 class="modalTitle" id="modalTitle">Détail</h2>
+        <button class="closeBtn" id="closeBtn" aria-label="Fermer">Fermer</button>
+      </div>
+      <div class="modalBody">
+        <p class="modalText" id="modalText"></p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- Storage keys
+    const STORAGE_KEY = "mini_ui_items_v1";
+
+    // --- DOM refs
+    const addBtn = document.getElementById("addBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const listEl = document.getElementById("list");
+    const emptyStateEl = document.getElementById("emptyState");
+
+    const backdrop = document.getElementById("backdrop");
+    const closeBtn = document.getElementById("closeBtn");
+    const modalTitle = document.getElementById("modalTitle");
+    const modalText = document.getElementById("modalText");
+
+    // --- Data
+    let items = loadItems();
+
+    // --- Random generators (simple + fun)
+    const ADJ = ["Rapide", "Calme", "Solaire", "Obscur", "Curieux", "Léger", "Robuste", "Vif", "Furtif", "Précis"];
+    const NOUN = ["Renard", "Orbite", "Pulsar", "Clavier", "Nuage", "Module", "Signal", "Boussole", "Atome", "Tikkie"];
+    const WORDS = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet",
+                   "kilo", "lima", "mango", "nectar", "omega", "panda", "quantum", "radar", "sigma", "tango",
+                   "ultra", "vector", "whisper", "xeno", "yotta", "zen"];
+
+    function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+    function randomName() {
+      const n = String(Math.floor(10 + Math.random() * 90));
+      return `${pick(ADJ)} ${pick(NOUN)} #${n}`;
+    }
+
+    function randomText() {
+      const lines = [];
+      const lineCount = 2 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < lineCount; i++) {
+        const wcount = 6 + Math.floor(Math.random() * 10);
+        const ws = Array.from({ length: wcount }, () => pick(WORDS));
+        let sentence = ws.join(" ");
+        sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1) + ".";
+        lines.push(sentence);
+      }
+      return lines.join("\n");
+    }
+
+    function newItem() {
+      const id = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "_" + Math.random().toString(16).slice(2);
+      const createdAt = Date.now();
+      return {
+        id,
+        name: randomName(),
+        text: randomText(),
+        createdAt
+      };
+    }
+
+    // --- Storage helpers
+    function loadItems() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveItems() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    }
+
+    // --- Render
+    function render() {
+      listEl.innerHTML = "";
+
+      if (!items.length) {
+        emptyStateEl.style.display = "block";
+        return;
+      }
+      emptyStateEl.style.display = "none";
+
+      // show newest first
+      const sorted = [...items].sort((a, b) => b.createdAt - a.createdAt);
+
+      for (const item of sorted) {
+        const li = document.createElement("li");
+        li.className = "row";
+        li.dataset.id = item.id;
+
+        const left = document.createElement("div");
+        const name = document.createElement("div");
+        name.className = "name";
+        name.textContent = item.name;
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const date = new Date(item.createdAt);
+        meta.textContent = `Ajouté: ${date.toLocaleString()}`;
+
+        left.appendChild(name);
+        left.appendChild(meta);
+
+        const right = document.createElement("div");
+        right.className = "pill";
+        right.textContent = "Clique → popup";
+
+        li.appendChild(left);
+        li.appendChild(right);
+
+        li.addEventListener("click", () => openModal(item));
+
+        listEl.appendChild(li);
+      }
+    }
+
+    // --- Modal logic
+    function openModal(item) {
+      modalTitle.textContent = item.name;
+      modalText.textContent = item.text;
+      backdrop.setAttribute("aria-hidden", "false");
+      // focus close button for accessibility
+      closeBtn.focus();
+    }
+
+    function closeModal() {
+      backdrop.setAttribute("aria-hidden", "true");
+    }
+
+    // Close modal if user clicks outside
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) closeModal();
+    });
+    closeBtn.addEventListener("click", closeModal);
+
+    // Esc to close
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && backdrop.getAttribute("aria-hidden") === "false") {
+        closeModal();
+      }
+    });
+
+    // --- Buttons
+    addBtn.addEventListener("click", () => {
+      const item = newItem();
+      items.push(item);
+      saveItems();
+      render();
+    });
+
+    clearBtn.addEventListener("click", () => {
+      items = [];
+      saveItems();
+      closeModal();
+      render();
+    });
+
+    // Init
+    render();
+  </script>
+</body>
+</html>
+

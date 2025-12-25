@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mini UI: liste + popup + localStorage + delays</title>
+  <style>
+    :root{
+      --bg:#0b0f17;--panel:#121a2a;--panel2:#0f1626;--text:#e7eefc;--muted:#9bb0d1;
+      --border:rgba(255,255,255,.10);--shadow:0 18px 60px rgba(0,0,0,.45);--radius:14px;
+      --btn:#1d2a44;--btnHover:#243455;--accent:#7aa7ff;
+    }
+    *{box-sizing:border-box} html,body{height:100%}
+    body{
+      margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      background: radial-gradient(1200px 700px at 20% 0%, rgba(122,167,255,.12), transparent 55%),
+                  radial-gradient(1000px 700px at 90% 20%, rgba(122,255,201,.08), transparent 50%),
+                  var(--bg);
+      color:var(--text);
+    }
+    .app{height:100%;display:grid;grid-template-columns: 280px 1fr;}
+    .sidebar{
+      background: linear-gradient(180deg,var(--panel),var(--panel2));
+      border-right:1px solid var(--border);
+      padding:16px;
+      display:flex;flex-direction:column;gap:14px;
+    }
+    .topRow{display:flex;align-items:center;gap:12px;}
+    .btnPlus{
+      width:44px;height:44px;border-radius:12px;border:1px solid var(--border);
+      background:var(--btn);color:var(--text);font-size:26px;cursor:pointer;
+      display:grid;place-items:center;box-shadow:0 10px 25px rgba(0,0,0,.25);
+      transition:transform .08s ease, background .12s ease;
+    }
+    .btnPlus:hover{background:var(--btnHover)} .btnPlus:active{transform:translateY(1px) scale(.99)}
+    .btnPlus[disabled]{opacity:.5;cursor:not-allowed}
+
+    .titleSide{display:flex;flex-direction:column;gap:2px}
+    .titleSide b{font-size:14px}
+    .titleSide span{font-size:12px;color:var(--muted)}
+
+    .panel{
+      border:1px solid var(--border);border-radius:var(--radius);
+      background:rgba(255,255,255,.03);
+      padding:12px;
+    }
+    .panel h3{margin:0 0 10px;font-size:13px;color:var(--text);letter-spacing:.2px}
+    .row{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      margin:10px 0;
+    }
+    label{font-size:12px;color:var(--muted)}
+    input[type="number"]{
+      width:96px;padding:8px 10px;border-radius:10px;border:1px solid var(--border);
+      background:rgba(0,0,0,.2);color:var(--text);
+      outline:none;
+    }
+    .btnSmall{
+      border:1px solid var(--border);
+      background:rgba(255,255,255,.03);
+      color:var(--text);
+      border-radius:10px;
+      padding:8px 10px;
+      font-size:12px;
+      cursor:pointer;
+      transition:background .12s ease;
+    }
+    .btnSmall:hover{background:rgba(255,255,255,.06)}
+    .btnRow{display:flex;gap:10px;flex-wrap:wrap}
+
+    .main{padding:22px;overflow:auto}
+    .header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:14px}
+    .title{font-size:18px;margin:0;letter-spacing:.2px}
+    .sub{color:var(--muted);font-size:13px}
+    .card{
+      background:rgba(18,26,42,.75);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+    }
+    .list{margin:0;padding:0;list-style:none}
+    .itemRow{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      padding:14px;border-top:1px solid var(--border);
+      cursor:pointer;transition:background .12s ease;
+    }
+    .itemRow:first-child{border-top:none}
+    .itemRow:hover{background:rgba(255,255,255,.03)}
+    .name{font-weight:600;font-size:14px}
+    .meta{font-size:12px;color:var(--muted);display:flex;gap:10px;align-items:center;white-space:nowrap}
+    .pill{
+      border:1px solid var(--border);
+      border-radius:999px;
+      padding:4px 10px;
+      font-size:12px;
+      color:var(--muted);
+      background:rgba(255,255,255,.02);
+    }
+    .empty{padding:18px 14px;color:var(--muted);font-size:13px}
+
+    /* Modal */
+    .backdrop{
+      position:fixed;inset:0;background:rgba(0,0,0,.55);
+      display:none;align-items:center;justify-content:center;padding:22px;
+    }
+    .backdrop[aria-hidden="false"]{display:flex}
+    .modal{
+      width:min(720px,96vw);
+      background:rgba(18,26,42,.92);
+      border:1px solid var(--border);
+      border-radius:18px;
+      box-shadow:var(--shadow);
+      overflow:hidden;
+      animation:pop .14s ease-out forwards;
+    }
+    @keyframes pop{
+      from{opacity:0;transform:translateY(10px) scale(.99)}
+      to{opacity:1;transform:translateY(0) scale(1)}
+    }
+    .modalHead{
+      padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;
+      border-bottom:1px solid var(--border);
+    }
+    .modalTitle{margin:0;font-size:15px;letter-spacing:.2px}
+    .closeBtn{
+      border:1px solid var(--border);
+      background:rgba(255,255,255,.03);
+      color:var(--text);
+      border-radius:10px;
+      padding:8px 10px;
+      cursor:pointer;
+    }
+    .closeBtn:hover{background:rgba(255,255,255,.06)}
+    .modalBody{padding:14px 16px 18px}
+    .modalText{margin:0;line-height:1.45;font-size:14px;white-space:pre-wrap}
+
+    /* Global loading overlay */
+    .loadingOverlay{
+      position:fixed;inset:0;
+      background:rgba(5,8,13,.72);
+      backdrop-filter: blur(6px);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:9999;
+    }
+    .loadingOverlay[aria-hidden="false"]{display:flex}
+    .loadingBox{
+      width:min(420px,90vw);
+      padding:18px 18px 16px;
+      border-radius:18px;
+      border:1px solid var(--border);
+      background:rgba(18,26,42,.78);
+      box-shadow:var(--shadow);
+    }
+    .loadingTitle{margin:0 0 8px;font-size:14px}
+    .loadingSub{margin:0;color:var(--muted);font-size:13px}
+    .bar{
+      height:10px;border-radius:999px;border:1px solid var(--border);
+      background:rgba(255,255,255,.05);
+      overflow:hidden;
+      margin-top:14px;
+    }
+    .bar > div{
+      height:100%;
+      width:35%;
+      background:rgba(122,167,255,.35);
+      border-right:1px solid rgba(255,255,255,.15);
+      animation: move 1.1s ease-in-out infinite;
+    }
+    @keyframes move{
+      0%{transform:translateX(-120%)}
+      100%{transform:translateX(340%)}
+    }
+    .tiny{font-size:11px;color:var(--muted);margin-top:10px}
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="topRow">
+        <button class="btnPlus" id="addBtn" title="Ajouter un élément">+</button>
+        <div class="titleSide">
+          <b>Mini UI</b>
+          <span>Liste + popup + localStorage</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Réglages “app lourde” (ms)</h3>
+
+        <div class="row">
+          <label for="delayPage">Chargement page</label>
+          <input id="delayPage" type="number" min="0" step="50" />
+        </div>
+
+        <div class="row">
+          <label for="delayAdd">Ajout élément (+)</label>
+          <input id="delayAdd" type="number" min="0" step="50" />
+        </div>
+
+        <div class="row">
+          <label for="delayPopup">Ouverture popup</label>
+          <input id="delayPopup" type="number" min="0" step="50" />
+        </div>
+
+        <div class="btnRow" style="margin-top:10px">
+          <button class="btnSmall" id="saveSettingsBtn">Sauver</button>
+          <button class="btnSmall" id="resetSettingsBtn">Défaut</button>
+        </div>
+
+        <div class="tiny">Astuce: mets 800–2000ms pour “sentir” la lourdeur.</div>
+      </div>
+
+      <div class="panel">
+        <h3>Données</h3>
+        <div class="btnRow">
+          <button class="btnSmall" id="clearBtn">Reset liste</button>
+        </div>
+      </div>
+
+      <div class="sub" style="margin-top:auto">
+        Clic item → popup.<br/>Fermer popup: <b>Esc</b>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="header">
+        <div>
+          <h1 class="title">Éléments</h1>
+          <div class="sub">Persisté via <span class="pill">localStorage</span>.</div>
+        </div>
+        <div class="sub" id="status"></div>
+      </div>
+
+      <section class="card">
+        <ul class="list" id="list"></ul>
+        <div class="empty" id="emptyState" style="display:none;">
+          Aucun élément. Clique sur <b>+</b> à gauche pour en créer un.
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Page loading overlay -->
+  <div class="loadingOverlay" id="loadingOverlay" aria-hidden="true">
+    <div class="loadingBox">
+      <p class="loadingTitle">Chargement…</p>
+      <p class="loadingSub" id="loadingSub">Initialisation de l’interface</p>
+      <div class="bar"><div></div></div>
+      <div class="tiny" id="loadingTiny"></div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="backdrop" id="backdrop" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal" role="document" aria-labelledby="modalTitle">
+      <div class="modalHead">
+        <h2 class="modalTitle" id="modalTitle">Détail</h2>
+        <button class="closeBtn" id="closeBtn" aria-label="Fermer">Fermer</button>
+      </div>
+      <div class="modalBody">
+        <p class="modalText" id="modalText"></p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- Keys
+    const STORAGE_ITEMS = "mini_ui_items_v2";
+    const STORAGE_SETTINGS = "mini_ui_settings_v1";
+
+    // --- DOM
+    const addBtn = document.getElementById("addBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const listEl = document.getElementById("list");
+    const emptyStateEl = document.getElementById("emptyState");
+    const statusEl = document.getElementById("status");
+
+    const backdrop = document.getElementById("backdrop");
+    const closeBtn = document.getElementById("closeBtn");
+    const modalTitle = document.getElementById("modalTitle");
+    const modalText = document.getElementById("modalText");
+
+    const loadingOverlay = document.getElementById("loadingOverlay");
+    const loadingSub = document.getElementById("loadingSub");
+    const loadingTiny = document.getElementById("loadingTiny");
+
+    const delayPageInput = document.getElementById("delayPage");
+    const delayAddInput = document.getElementById("delayAdd");
+    const delayPopupInput = document.getElementById("delayPopup");
+    const saveSettingsBtn = document.getElementById("saveSettingsBtn");
+    const resetSettingsBtn = document.getElementById("resetSettingsBtn");
+
+    // --- Helpers
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const nowMs = () => performance.now();
+
+    // --- Default settings
+    const DEFAULTS = {
+      delayPage: 900,
+      delayAdd: 500,
+      delayPopup: 350
+    };
+
+    function loadSettings() {
+      try {
+        const raw = localStorage.getItem(STORAGE_SETTINGS);
+        if (!raw) return { ...DEFAULTS };
+        const s = JSON.parse(raw);
+        return {
+          delayPage: toInt(s.delayPage, DEFAULTS.delayPage),
+          delayAdd: toInt(s.delayAdd, DEFAULTS.delayAdd),
+          delayPopup: toInt(s.delayPopup, DEFAULTS.delayPopup),
+        };
+      } catch {
+        return { ...DEFAULTS };
+      }
+    }
+
+    function saveSettings(s) {
+      localStorage.setItem(STORAGE_SETTINGS, JSON.stringify(s));
+    }
+
+    function toInt(v, dflt) {
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 ? Math.floor(n) : dflt;
+    }
+
+    function applySettingsToInputs(s) {
+      delayPageInput.value = s.delayPage;
+      delayAddInput.value = s.delayAdd;
+      delayPopupInput.value = s.delayPopup;
+    }
+
+    function readSettingsFromInputs() {
+      return {
+        delayPage: toInt(delayPageInput.value, DEFAULTS.delayPage),
+        delayAdd: toInt(delayAddInput.value, DEFAULTS.delayAdd),
+        delayPopup: toInt(delayPopupInput.value, DEFAULTS.delayPopup),
+      };
+    }
+
+    // --- Data
+    let settings = loadSettings();
+    applySettingsToInputs(settings);
+
+    let items = loadItems();
+
+    // --- Random generators
+    const ADJ = ["Rapide","Calme","Solaire","Obscur","Curieux","Léger","Robuste","Vif","Furtif","Précis"];
+    const NOUN = ["Renard","Orbite","Pulsar","Clavier","Nuage","Module","Signal","Boussole","Atome","Tikkie"];
+    const WORDS = ["alpha","bravo","charlie","delta","echo","foxtrot","golf","hotel","india","juliet","kilo","lima",
+                   "mango","nectar","omega","panda","quantum","radar","sigma","tango","ultra","vector","whisper","xeno",
+                   "yotta","zen"];
+    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+    function randomName() {
+      const n = String(Math.floor(10 + Math.random() * 90));
+      return `${pick(ADJ)} ${pick(NOUN)} #${n}`;
+    }
+    function randomText() {
+      const lines = [];
+      const lineCount = 2 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < lineCount; i++) {
+        const wcount = 6 + Math.floor(Math.random() * 10);
+        const ws = Array.from({ length: wcount }, () => pick(WORDS));
+        let sentence = ws.join(" ");
+        sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1) + ".";
+        lines.push(sentence);
+      }
+      return lines.join("\n");
+    }
+    function newItem() {
+      const id = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "_" + Math.random().toString(16).slice(2);
+      return { id, name: randomName(), text: randomText(), createdAt: Date.now() };
+    }
+
+    // --- Storage items
+    function loadItems() {
+      try {
+        const raw = localStorage.getItem(STORAGE_ITEMS);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    function saveItems() {
+      localStorage.setItem(STORAGE_ITEMS, JSON.stringify(items));
+    }
+
+    // --- Render
+    function render() {
+      listEl.innerHTML = "";
+      if (!items.length) {
+        emptyStateEl.style.display = "block";
+        return;
+      }
+      emptyStateEl.style.display = "none";
+
+      const sorted = [...items].sort((a,b) => b.createdAt - a.createdAt);
+      for (const item of sorted) {
+        const li = document.createElement("li");
+        li.className = "itemRow";
+        li.dataset.id = item.id;
+
+        const left = document.createElement("div");
+        const name = document.createElement("div");
+        name.className = "name";
+        name.textContent = item.name;
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = `Ajouté: ${new Date(item.createdAt).toLocaleString()}`;
+
+        left.appendChild(name);
+        left.appendChild(meta);
+
+        const right = document.createElement("div");
+        right.className = "pill";
+        right.textContent = "Clique → popup";
+
+        li.appendChild(left);
+        li.appendChild(right);
+
+        li.addEventListener("click", () => openModalWithDelay(item));
+
+        listEl.appendChild(li);
+      }
+    }
+
+    // --- Modal
+    function openModal(item) {
+      modalTitle.textContent = item.name;
+      modalText.textContent = item.text;
+      backdrop.setAttribute("aria-hidden", "false");
+      closeBtn.focus();
+    }
+    function closeModal() {
+      backdrop.setAttribute("aria-hidden", "true");
+    }
+    async function openModalWithDelay(item) {
+      const t0 = nowMs();
+      statusEl.textContent = `Ouverture popup… (${settings.delayPopup}ms)`;
+      await sleep(settings.delayPopup);
+      openModal(item);
+      const t1 = nowMs();
+      statusEl.textContent = `Popup ouverte en ${Math.round(t1 - t0)}ms`;
+    }
+
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) closeModal(); });
+    closeBtn.addEventListener("click", closeModal);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && backdrop.getAttribute("aria-hidden") === "false") closeModal();
+    });
+
+    // --- Add item with delay
+    addBtn.addEventListener("click", async () => {
+      addBtn.disabled = true;
+      const t0 = nowMs();
+      statusEl.textContent = `Ajout élément… (${settings.delayAdd}ms)`;
+      await sleep(settings.delayAdd);
+
+      const item = newItem();
+      items.push(item);
+      saveItems();
+      render();
+
+      const t1 = nowMs();
+      statusEl.textContent = `Élément ajouté en ${Math.round(t1 - t0)}ms`;
+      addBtn.disabled = false;
+    });
+
+    // --- Clear list
+    clearBtn.addEventListener("click", () => {
+      items = [];
+      saveItems();
+      closeModal();
+      statusEl.textContent = "Liste réinitialisée";
+      render();
+    });
+
+    // --- Settings buttons
+    saveSettingsBtn.addEventListener("click", () => {
+      settings = readSettingsFromInputs();
+      saveSettings(settings);
+      statusEl.textContent = `Réglages sauvegardés (page=${settings.delayPage} / add=${settings.delayAdd} / popup=${settings.delayPopup})`;
+    });
+
+    resetSettingsBtn.addEventListener("click", () => {
+      settings = { ...DEFAULTS };
+      saveSettings(settings);
+      applySettingsToInputs(settings);
+      statusEl.textContent = "Réglages réinitialisés";
+    });
+
+    // --- Page load simulation
+    async function simulatePageLoad() {
+      loadingOverlay.setAttribute("aria-hidden", "false");
+      loadingSub.textContent = "Initialisation de l’interface";
+      loadingTiny.textContent = `Délai configuré: ${settings.delayPage}ms`;
+
+      const t0 = nowMs();
+      await sleep(settings.delayPage);
+      const t1 = nowMs();
+
+      loadingOverlay.setAttribute("aria-hidden", "true");
+      statusEl.textContent = `Page prête en ${Math.round(t1 - t0)}ms`;
+    }
+
+    // Init
+    render();
+    simulatePageLoad();
+  </script>
+</body>
+</html>
+

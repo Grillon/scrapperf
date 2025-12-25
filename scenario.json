@@ -1,0 +1,31 @@
+{
+  "name": "mini_ui_heavy_sim",
+  "url": "file:///home/grillon/Documents/Exercices/Projets_outillage/scrapper/index.html",
+  "runs": 20,
+  "timeout_ms": 20000,
+  "headed": false,
+
+  "measurements": [
+    {
+      "name": "page_ready_overlay_gone",
+      "trigger": { "type": "goto", "wait_until": "domcontentloaded" },
+      "target": { "type": "wait_hidden", "selector": "text=Chargement" }
+    },
+    {
+      "name": "add_item_visible",
+      "trigger": { "type": "click", "selector": "button:has-text('+')" },
+      "target": { "type": "wait_visible", "selector": "li" }
+    },
+    {
+      "name": "open_popup_visible",
+      "trigger": { "type": "click", "selector": "li:first-child" },
+      "target": { "type": "wait_visible", "selector": "[role='dialog']" }
+    },
+    {
+      "name": "close_popup_hidden",
+      "trigger": { "type": "press", "key": "Escape" },
+      "target": { "type": "wait_hidden", "selector": "[role='dialog']" }
+    }
+  ]
+}
+
