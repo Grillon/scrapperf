@@ -2,7 +2,7 @@
   // Single-config key kept for backward compatibility
   const LS_KEY = "__ui_perf_autorun_cfg_v1";
 
-  // New: multi-config list storage
+  // Multi-config list storage
   const LS_KEY_LIST = "__ui_perf_autorun_cfg_list_v1";
 
   if (window.__uiPerfAutoPanel) {
@@ -50,7 +50,6 @@
   }
 
   function smartClick(el) {
-    // a bit more robust than el.click() alone
     try { el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); } catch {}
     try { el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); } catch {}
     try { el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true })); } catch {}
@@ -61,7 +60,7 @@
   function fmtNow() {
     const d = new Date();
     const pad = (n) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
   function nowIso() {
@@ -69,7 +68,7 @@
   }
 
   function pctl(arr, p) {
-    const xs = [...arr].sort((a,b)=>a-b);
+    const xs = [...arr].sort((a, b) => a - b);
     if (!xs.length) return NaN;
     const k = (xs.length - 1) * p;
     const f = Math.floor(k);
@@ -142,8 +141,19 @@
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({
-      "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;"
     }[c]));
+  }
+
+  function runUserScript(src, ctxName) {
+    if (!src || !src.trim()) return null;
+    try {
+      // Run as IIFE, return its return value.
+      const fn = new Function(`return (function(){\n${src}\n})();`);
+      return fn();
+    } catch (e) {
+      throw new Error(`${ctxName} script error: ${e && e.message ? e.message : e}`);
+    }
   }
 
   // ------------------ results tab ------------------
@@ -213,15 +223,6 @@
     window.__summaryEl = document.getElementById("summary");
     window.__rawEl = document.getElementById("raw");
 
-    window.__setMeta = (html) => { window.__metaEl.innerHTML = html; };
-    window.__appendRow = (rowHtml) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = rowHtml;
-      window.__rowsEl.appendChild(tr);
-    };
-    window.__setSummary = (text) => { window.__summaryEl.textContent = text; };
-    window.__setRaw = (text) => { window.__rawEl.value = text; };
-
     function toCsvValue(v) {
       const s = (v === null || v === undefined) ? "" : String(v);
       if (/[,"\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
@@ -249,7 +250,6 @@
         await navigator.clipboard.writeText(text);
         return true;
       } catch (e) {
-        // Fallback for non-secure contexts / blocked clipboard
         try {
           const ta = document.createElement("textarea");
           ta.value = text;
@@ -270,8 +270,7 @@
 
     document.getElementById("btnCopyJson").onclick = async () => {
       const ok = await copyText(window.__rawEl.value || "");
-      if (ok) alert("JSON copied");
-      else alert("Copy failed (clipboard blocked). You can manually copy the textarea.");
+      alert(ok ? "JSON copied" : "Copy failed (clipboard blocked). Manually copy the textarea.");
     };
 
     document.getElementById("btnCopyCsv").onclick = async () => {
@@ -279,8 +278,7 @@
         const rows = JSON.parse(window.__rawEl.value || "[]");
         const csv = jsonToCsv(Array.isArray(rows) ? rows : []);
         const ok = await copyText(csv);
-        if (ok) alert("CSV copied");
-        else alert("Copy failed (clipboard blocked). You can manually copy the textarea.");
+        alert(ok ? "CSV copied" : "Copy failed (clipboard blocked).");
       } catch (e) {
         alert("Could not generate/copy CSV: " + String(e && e.message ? e.message : e));
       }
@@ -288,8 +286,8 @@
 
     document.getElementById("btnClear").onclick = () => {
       window.__rowsEl.innerHTML = "";
-      window.__setSummary("");
-      window.__setRaw("");
+      window.__summaryEl.textContent = "";
+      window.__rawEl.value = "";
     };
   </script>
 </body>
@@ -298,25 +296,28 @@
     resultsWin.document.write(html);
     resultsWin.document.close();
   }
+
   function ensureResultsApi() {
     ensureResultsTab();
-    // The results tab is same-origin (about:blank). Grab DOM refs directly (robust even if inline JS didn't run yet).
     const d = resultsWin.document;
-    const metaEl = d.getElementById("meta");
-    const rowsEl = d.getElementById("rows");
-    const summaryEl = d.getElementById("summary");
-    const rawEl = d.getElementById("raw");
-    return { d, metaEl, rowsEl, summaryEl, rawEl };
+    return {
+      d,
+      metaEl: d.getElementById("meta"),
+      rowsEl: d.getElementById("rows"),
+      summaryEl: d.getElementById("summary"),
+      rawEl: d.getElementById("raw"),
+    };
   }
-
 
   function updateResultsMeta(cfg) {
     const api = ensureResultsApi();
     api.metaEl.innerHTML =
       `runs=${cfg.runs} timeout=${cfg.timeoutMs}ms cooldown=${cfg.cooldownMs}ms postExitWait=${cfg.postExitWaitMs}ms<br/>` +
-      `start=<code>${escapeHtml(cfg.startClickSelector)}</code> ` +
-      `stop=<code>${escapeHtml(cfg.stopSelector)}</code> (${escapeHtml(cfg.stopMode)}) ` +
-      `exit=<code>${escapeHtml(cfg.exitMode === "key" ? cfg.exitKey : cfg.exitClickSelector)}</code>`;
+      `startMode=<code>${escapeHtml(cfg.startMode)}</code> stopMode=<code>${escapeHtml(cfg.stopModeKind)}</code> exitMode=<code>${escapeHtml(cfg.exitModeKind)}</code><br/>` +
+      `start=<code>${escapeHtml(cfg.startMode === "script" ? "[script]" : cfg.startClickSelector)}</code> ` +
+      `stop=<code>${escapeHtml(cfg.stopModeKind === "script" ? "[script]" : cfg.stopSelector)}</code> ` +
+      `${cfg.stopModeKind === "selector" ? "(" + escapeHtml(cfg.stopMode) + ")" : ""} ` +
+      `exit=<code>${escapeHtml(cfg.exitModeKind === "script" ? "[script]" : (cfg.exitMode === "key" ? cfg.exitKey : cfg.exitClickSelector))}</code>`;
   }
 
   function updateResultsSummary() {
@@ -324,7 +325,7 @@
     const okVals = results.filter(r => r.ok && typeof r.ms === "number").map(r => r.ms);
     const errCount = results.filter(r => !r.ok).length;
 
-    const avg = okVals.length ? Math.round(okVals.reduce((a,b)=>a+b,0)/okVals.length) : "—";
+    const avg = okVals.length ? Math.round(okVals.reduce((a, b) => a + b, 0) / okVals.length) : "—";
     const p50 = okVals.length ? Math.round(pctl(okVals, 0.50)) : "—";
     const p95 = okVals.length ? Math.round(pctl(okVals, 0.95)) : "—";
 
@@ -348,24 +349,35 @@
   }
 
   // ------------------ runner core ------------------
+  function stopSatisfied(cfg) {
+    if (cfg.stopModeKind === "script") {
+      const out = runUserScript(cfg.stopScript, "STOP");
+      return !!out;
+    }
+    return evalStop(cfg.stopSelector, cfg.stopMode);
+  }
+
   async function waitForStop(cfg) {
     const t0 = performance.now();
     const deadline = t0 + cfg.timeoutMs;
 
-    // if already satisfied, return 0
-    if (evalStop(cfg.stopSelector, cfg.stopMode)) return 0;
+    if (stopSatisfied(cfg)) return 0;
 
     while (performance.now() < deadline) {
       if (shouldStop) throw new Error("stopped by user");
-      if (evalStop(cfg.stopSelector, cfg.stopMode)) {
-        return Math.round(performance.now() - t0);
-      }
+      if (stopSatisfied(cfg)) return Math.round(performance.now() - t0);
       await new Promise(r => requestAnimationFrame(r));
     }
     throw new Error("timeout waiting STOP condition");
   }
 
   async function doExit(cfg) {
+    if (cfg.exitModeKind === "script") {
+      runUserScript(cfg.exitScript, "EXIT");
+      await sleep(cfg.postExitWaitMs);
+      return;
+    }
+
     if (cfg.exitMode === "key") {
       const key = cfg.exitKey || "Escape";
       document.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
@@ -380,23 +392,46 @@
     await sleep(cfg.postExitWaitMs);
   }
 
+  async function doStart(cfg) {
+    if (cfg.startMode === "script") {
+      const out = runUserScript(cfg.startScript, "START");
+      // Script may have performed the action itself; if it returns something, we can click it.
+      if (out) {
+        if (typeof out === "string") {
+          const el = safeQuery(out);
+          if (!el) throw new Error("START script returned selector not found: " + out);
+          smartClick(el);
+          return "start:script→selector";
+        }
+        if (out && out.nodeType === 1) {
+          smartClick(out);
+          return "start:script→element";
+        }
+        throw new Error("START script returned unsupported type: " + (typeof out));
+      }
+      return "start:script";
+    }
+
+    const el = safeQuery(cfg.startClickSelector);
+    if (!el) throw new Error("start element not found: " + cfg.startClickSelector);
+    smartClick(el);
+    return "start:selector";
+  }
+
   async function runOnce(cfg, runIndex) {
     const ts = fmtNow();
 
-    // If popup/result is already visible, try to exit first (best-effort)
-    if (evalStop(cfg.stopSelector, cfg.stopMode)) {
+    // Best-effort cleanup if stop already satisfied
+    if (stopSatisfied(cfg)) {
       try { await doExit(cfg); } catch {}
     }
 
-    const startEl = safeQuery(cfg.startClickSelector);
-    if (!startEl) throw new Error("start element not found: " + cfg.startClickSelector);
+    const startDetail = await doStart(cfg);
 
-    // Click start and measure until stop
-    smartClick(startEl);
+    // measure until stop
     const dt = await waitForStop(cfg);
 
-    // record
-    addResultRow({ run: runIndex, ts, ms: dt, ok: true, detail: "" });
+    addResultRow({ run: runIndex, ts, ms: dt, ok: true, detail: startDetail });
 
     // exit then cooldown
     await doExit(cfg);
@@ -410,6 +445,14 @@
 
     results = [];
     ensureResultsTab();
+    // clear table content
+    try {
+      const api = ensureResultsApi();
+      api.rowsEl.innerHTML = "";
+      api.rawEl.value = "";
+      api.summaryEl.textContent = "";
+    } catch {}
+
     updateResultsMeta(cfg);
     updateResultsSummary();
 
@@ -423,7 +466,7 @@
         setStatus(`RUNNING… (${i}/${cfg.runs})`, "#00ffcc");
         await runOnce(cfg, i);
       } catch (e) {
-        addResultRow({ run: i, ts: fmtNow(), ms: null, ok: false, detail: String(e) });
+        addResultRow({ run: i, ts: fmtNow(), ms: null, ok: false, detail: String(e && e.message ? e.message : e) });
         // attempt cleanup for next run
         try { await doExit(cfg); } catch {}
         await sleep(cfg.cooldownMs);
@@ -442,7 +485,7 @@
     right: 16px;
     bottom: 16px;
     z-index: 999999;
-    width: 520px;
+    width: 560px;
     background: rgba(0,0,0,0.88);
     color: #e7eefc;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -472,40 +515,72 @@
           <button data-cfgexp style="padding:6px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:#111;color:#e7eefc;cursor:pointer;">Export</button>
           <button data-cfgimp style="padding:6px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:#111;color:#e7eefc;cursor:pointer;">Import</button>
         </div>
-        <div style="margin-top:4px;color:#9bb0d1;line-height:1.35;">
-          Export/Import copies JSON list via clipboard (fallback prompt).
+      </div>
+
+      <div>
+        <div style="margin-bottom:4px;color:#9bb0d1;">START</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+          <select data-startmode style="width:110px;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e7eefc;">
+            <option value="selector" selected>selector</option>
+            <option value="script">script</option>
+          </select>
+          <input data-start placeholder="ex: #addBtn" style="flex:1;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e7eefc;">
         </div>
+        <textarea data-startscript style="display:none;width:100%;height:80px;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e7eefc;"
+          placeholder="Start script. May click itself, or return Element, or return selector string.
+Example n+1:
+const xs=document.querySelectorAll('li.itemRow');
+return xs.length? xs[xs.length-1] : null;"></textarea>
       </div>
 
       <div>
-        <div style="margin-bottom:4px;color:#9bb0d1;">START click selector</div>
-        <input data-start placeholder="ex: li.itemRow:nth-of-type(6)" style="width:100%;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e7eefc;">
-      </div>
+        <div style="margin-bottom:4px;color:#9bb0d1;">STOP</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+          <select data-stopmodekind style="width:110px;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e7eefc;">
+            <option value="selector" selected>selector</option>
+            <option value="script">script</option>
+          </select>
 
-      <div>
-        <div style="margin-bottom:4px;color:#9bb0d1;">STOP condition</div>
-        <div style="display:flex;gap:6px;">
           <input data-stop placeholder="ex: .modalHead" style="flex:1;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e7eefc;">
-          <select data-stopmode style="width:110px;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e7eefc;">
+
+          <select data-stopvis style="width:110px;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e7eefc;">
             <option value="visible" selected>visible</option>
             <option value="present">present</option>
             <option value="hidden">hidden</option>
             <option value="gone">gone</option>
           </select>
         </div>
+
+        <textarea data-stopscript style="display:none;width:100%;height:100px;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e7eefc;"
+          placeholder="Stop script: return true when done else false.
+Example visible:
+const el=document.querySelector('.modalHead');
+if(!el) return false;
+const r=el.getBoundingClientRect();
+return r.width>2 && r.height>2;"></textarea>
       </div>
 
       <div>
-        <div style="margin-bottom:4px;color:#9bb0d1;">EXIT action</div>
-        <div style="display:flex;gap:6px;align-items:center;">
+        <div style="margin-bottom:4px;color:#9bb0d1;">EXIT</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+          <select data-exitmodekind style="width:110px;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e7eefc;">
+            <option value="selector" selected>selector</option>
+            <option value="script">script</option>
+          </select>
+
           <select data-exitmode style="width:110px;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e7eefc;">
             <option value="click" selected>click</option>
             <option value="key">key</option>
           </select>
+
           <input data-exitclick placeholder="ex: #closeBtn" style="flex:1;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e7eefc;">
           <input data-exitkey placeholder="Escape" style="width:90px;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e7eefc;display:none;">
         </div>
-        <div style="margin-top:4px;color:#9bb0d1;">Exit sert à fermer la popup / revenir pour permettre la run suivante.</div>
+
+        <textarea data-exitscript style="display:none;width:100%;height:80px;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e7eefc;"
+          placeholder="Exit script: close/reset UI for next run.
+Example:
+document.querySelector('#closeBtn')?.click();"></textarea>
       </div>
 
       <div style="display:flex;gap:10px;">
@@ -538,10 +613,6 @@
       <button data-save style="flex:1;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:#1d2a44;color:#e7eefc;cursor:pointer;">Save</button>
       <button data-open style="flex:1;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:#222;color:#e7eefc;cursor:pointer;">Results</button>
     </div>
-
-    <div style="margin-top:8px;color:#9bb0d1;line-height:1.35;">
-      Preset typique : start=<b>li.itemRow:nth-of-type(6)</b>, stop=<b>.modalHead</b> (visible), exit=<b>#closeBtn</b>
-    </div>
   `;
 
   document.body.appendChild(panel);
@@ -558,12 +629,21 @@
   const btnCfgImp = panel.querySelector("[data-cfgimp]");
 
   // fields
+  const startModeKindEl = panel.querySelector("[data-startmode]");
   const startEl = panel.querySelector("[data-start]");
+  const startScriptEl = panel.querySelector("[data-startscript]");
+
+  const stopModeKindEl = panel.querySelector("[data-stopmodekind]");
   const stopEl = panel.querySelector("[data-stop]");
-  const stopModeEl = panel.querySelector("[data-stopmode]");
+  const stopVisModeEl = panel.querySelector("[data-stopvis]");
+  const stopScriptEl = panel.querySelector("[data-stopscript]");
+
+  const exitModeKindEl = panel.querySelector("[data-exitmodekind]");
   const exitModeEl = panel.querySelector("[data-exitmode]");
   const exitClickEl = panel.querySelector("[data-exitclick]");
   const exitKeyEl = panel.querySelector("[data-exitkey]");
+  const exitScriptEl = panel.querySelector("[data-exitscript]");
+
   const runsEl = panel.querySelector("[data-runs]");
   const timeoutEl = panel.querySelector("[data-timeout]");
   const cooldownEl = panel.querySelector("[data-cooldown]");
@@ -585,36 +665,6 @@
     btnRun.disabled = isRunning;
   }
 
-  function readCfgFromUI() {
-    const exitMode = exitModeEl.value;
-    return {
-      startClickSelector: startEl.value.trim(),
-      stopSelector: stopEl.value.trim(),
-      stopMode: stopModeEl.value,
-      exitMode,
-      exitClickSelector: exitClickEl.value.trim(),
-      exitKey: exitKeyEl.value.trim() || "Escape",
-      runs: Math.max(1, parseInt(runsEl.value || "10", 10)),
-      timeoutMs: Math.max(1000, parseInt(timeoutEl.value || "20000", 10)),
-      cooldownMs: Math.max(0, parseInt(cooldownEl.value || "400", 10)),
-      postExitWaitMs: Math.max(0, parseInt(postExitEl.value || "200", 10)),
-    };
-  }
-
-  function applyCfgToUI(cfg) {
-    startEl.value = cfg.startClickSelector || "li.itemRow:nth-of-type(6)";
-    stopEl.value = cfg.stopSelector || ".modalHead";
-    stopModeEl.value = cfg.stopMode || "visible";
-    exitModeEl.value = cfg.exitMode || "click";
-    exitClickEl.value = cfg.exitClickSelector || "#closeBtn";
-    exitKeyEl.value = cfg.exitKey || "Escape";
-    runsEl.value = String(cfg.runs ?? 10);
-    timeoutEl.value = String(cfg.timeoutMs ?? 20000);
-    cooldownEl.value = String(cfg.cooldownMs ?? 400);
-    postExitEl.value = String(cfg.postExitWaitMs ?? 200);
-    syncExitModeUI();
-  }
-
   function syncExitModeUI() {
     const mode = exitModeEl.value;
     if (mode === "key") {
@@ -624,6 +674,80 @@
       exitKeyEl.style.display = "none";
       exitClickEl.style.display = "block";
     }
+  }
+
+  function syncModeUI() {
+    // START
+    const sm = startModeKindEl.value;
+    startEl.style.display = (sm === "selector") ? "block" : "none";
+    startScriptEl.style.display = (sm === "script") ? "block" : "none";
+
+    // STOP
+    const stm = stopModeKindEl.value;
+    stopEl.style.display = (stm === "selector") ? "block" : "none";
+    stopVisModeEl.style.display = (stm === "selector") ? "block" : "none";
+    stopScriptEl.style.display = (stm === "script") ? "block" : "none";
+
+    // EXIT
+    const em = exitModeKindEl.value;
+    exitModeEl.style.display = (em === "selector") ? "block" : "none";
+    if (em === "selector") {
+      syncExitModeUI();
+      exitScriptEl.style.display = "none";
+    } else {
+      exitClickEl.style.display = "none";
+      exitKeyEl.style.display = "none";
+      exitScriptEl.style.display = "block";
+    }
+  }
+
+  function readCfgFromUI() {
+    const exitMode = exitModeEl.value;
+    return {
+      startMode: startModeKindEl.value, // selector|script
+      startClickSelector: startEl.value.trim(),
+      startScript: startScriptEl.value || "",
+
+      stopModeKind: stopModeKindEl.value, // selector|script
+      stopSelector: stopEl.value.trim(),
+      stopMode: stopVisModeEl.value,      // visible/present/hidden/gone
+      stopScript: stopScriptEl.value || "",
+
+      exitModeKind: exitModeKindEl.value, // selector|script
+      exitMode,
+      exitClickSelector: exitClickEl.value.trim(),
+      exitKey: exitKeyEl.value.trim() || "Escape",
+      exitScript: exitScriptEl.value || "",
+
+      runs: Math.max(1, parseInt(runsEl.value || "10", 10)),
+      timeoutMs: Math.max(1000, parseInt(timeoutEl.value || "20000", 10)),
+      cooldownMs: Math.max(0, parseInt(cooldownEl.value || "400", 10)),
+      postExitWaitMs: Math.max(0, parseInt(postExitEl.value || "200", 10)),
+    };
+  }
+
+  function applyCfgToUI(cfg) {
+    startModeKindEl.value = cfg.startMode || "selector";
+    startEl.value = cfg.startClickSelector || "li.itemRow:nth-of-type(6)";
+    startScriptEl.value = cfg.startScript || "";
+
+    stopModeKindEl.value = cfg.stopModeKind || "selector";
+    stopEl.value = cfg.stopSelector || ".modalHead";
+    stopVisModeEl.value = cfg.stopMode || "visible";
+    stopScriptEl.value = cfg.stopScript || "";
+
+    exitModeKindEl.value = cfg.exitModeKind || "selector";
+    exitModeEl.value = cfg.exitMode || "click";
+    exitClickEl.value = cfg.exitClickSelector || "#closeBtn";
+    exitKeyEl.value = cfg.exitKey || "Escape";
+    exitScriptEl.value = cfg.exitScript || "";
+
+    runsEl.value = String(cfg.runs ?? 10);
+    timeoutEl.value = String(cfg.timeoutMs ?? 20000);
+    cooldownEl.value = String(cfg.cooldownMs ?? 400);
+    postExitEl.value = String(cfg.postExitWaitMs ?? 200);
+
+    syncModeUI();
   }
 
   function renderCfgSelect() {
@@ -656,12 +780,21 @@
     if (!cfgList.items.length) {
       const legacy = loadCfg();
       const base = legacy || {
+        startMode: "selector",
         startClickSelector: "li.itemRow:nth-of-type(6)",
+        startScript: "",
+
+        stopModeKind: "selector",
         stopSelector: ".modalHead",
         stopMode: "visible",
+        stopScript: "",
+
+        exitModeKind: "selector",
         exitMode: "click",
         exitClickSelector: "#closeBtn",
         exitKey: "Escape",
+        exitScript: "",
+
         runs: 10,
         timeoutMs: 20000,
         cooldownMs: 400,
@@ -708,7 +841,6 @@
   btnCfgSave.onclick = () => {
     let it = getSelectedItem(cfgList);
     if (!it) {
-      // if somehow nothing selected, create one
       it = { id: genId(), name: "Default", cfg: readCfgFromUI(), updatedAt: nowIso() };
       upsertCfgItem(cfgList, it);
       cfgList.selectedId = it.id;
@@ -771,23 +903,41 @@
     }
   };
 
-  // -------- existing UI events --------
-  exitModeEl.addEventListener("change", syncExitModeUI);
+  // -------- UI events --------
+  startModeKindEl.addEventListener("change", syncModeUI);
+  stopModeKindEl.addEventListener("change", syncModeUI);
+  exitModeKindEl.addEventListener("change", syncModeUI);
+  exitModeEl.addEventListener("change", syncModeUI);
 
   btnRun.onclick = async () => {
     try {
       const cfg = readCfgFromUI();
 
-      if (!cfg.startClickSelector) {
-        setStatus("Missing startClickSelector", "#ff6b6b");
+      // validation
+      if (cfg.startMode === "selector" && !cfg.startClickSelector) {
+        setStatus("Missing START selector", "#ff6b6b");
         return;
       }
-      if (!cfg.stopSelector) {
-        setStatus("Missing stopSelector", "#ff6b6b");
+      if (cfg.startMode === "script" && !cfg.startScript.trim()) {
+        setStatus("Missing START script", "#ff6b6b");
         return;
       }
-      if (cfg.exitMode === "click" && !cfg.exitClickSelector) {
-        setStatus("Missing exitClickSelector (or switch exit to key)", "#ff6b6b");
+
+      if (cfg.stopModeKind === "selector" && !cfg.stopSelector) {
+        setStatus("Missing STOP selector", "#ff6b6b");
+        return;
+      }
+      if (cfg.stopModeKind === "script" && !cfg.stopScript.trim()) {
+        setStatus("Missing STOP script", "#ff6b6b");
+        return;
+      }
+
+      if (cfg.exitModeKind === "selector" && cfg.exitMode === "click" && !cfg.exitClickSelector) {
+        setStatus("Missing EXIT selector (or switch EXIT click/key)", "#ff6b6b");
+        return;
+      }
+      if (cfg.exitModeKind === "script" && !cfg.exitScript.trim()) {
+        setStatus("Missing EXIT script", "#ff6b6b");
         return;
       }
 
@@ -796,7 +946,7 @@
 
       await runAll(cfg);
     } catch (e) {
-      setStatus(String(e), "#ff6b6b");
+      setStatus(String(e && e.message ? e.message : e), "#ff6b6b");
     }
   };
 
@@ -808,18 +958,17 @@
   btnOpen.onclick = () => {
     try {
       ensureResultsTab();
-      // keep summary/JSON in sync even if opened late
       updateResultsSummary();
     } catch (e) {
-      setStatus(String(e), "#ff6b6b");
+      setStatus(String(e && e.message ? e.message : e), "#ff6b6b");
     }
   };
 
-  // Save button now saves into current selected config + legacy single cfg
+  // Save button saves legacy + current selection
   btnSave.onclick = () => {
     const cfg = readCfgFromUI();
-    saveCfg(cfg);       // legacy single save (kept)
-    btnCfgSave.onclick(); // also save into selected config list
+    saveCfg(cfg);         // legacy single save
+    btnCfgSave.onclick(); // save into list
   };
 
   panel.querySelector("[data-x]").onclick = () => {
@@ -830,7 +979,7 @@
 
   // Boot config list + load selection
   ensureCfgListBoot();
+  syncModeUI();
 
-  // show a friendly loaded status
   setStatus("idle", "#00ffcc");
 })();

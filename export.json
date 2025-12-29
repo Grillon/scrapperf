@@ -1,0 +1,28 @@
+{
+  "selectedId": "cfg_2da32e0d233fa8_1767047406625",
+  "items": [
+    {
+      "id": "cfg_2da32e0d233fa8_1767047406625",
+      "name": "Imported (legacy)",
+      "cfg": {
+        "startMode": "selector",
+        "startClickSelector": "#addBtn",
+        "startScript": "",
+        "stopModeKind": "script",
+        "stopSelector": "#list > li",
+        "stopMode": "visible",
+        "stopScript": "// STOP when list length == baseline + 1\nwindow.__uip_stop_base = window.__uip_stop_base ?? document.querySelectorAll(\"#list > li\").length;\nreturn document.querySelectorAll(\"#list > li\").length === window.__uip_stop_base + 1;",
+        "exitModeKind": "script",
+        "exitMode": "click",
+        "exitClickSelector": "body > div.app > main > div > div:nth-child(1) > div > span",
+        "exitKey": "Escape",
+        "exitScript": "console.log(\"ok\");",
+        "runs": 10,
+        "timeoutMs": 2000,
+        "cooldownMs": 400,
+        "postExitWaitMs": 200
+      },
+      "updatedAt": "2025-12-29T22:38:12.669Z"
+    }
+  ]
+}
